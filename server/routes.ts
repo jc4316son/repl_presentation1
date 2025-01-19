@@ -105,26 +105,46 @@ export function registerRoutes(app: Express) {
           date: serviceQueues.date,
           createdAt: serviceQueues.createdAt,
           updatedAt: serviceQueues.updatedAt,
-          items: sql`json_agg(json_build_object(
-            'id', ${queueItems.id},
-            'order', ${queueItems.order},
-            'song', json_build_object(
-              'id', ${songs.id},
-              'title', ${songs.title},
-              'author', ${songs.author}
-            )
-          ) ORDER BY ${queueItems.order})`
+          items: sql`json_agg(
+            CASE WHEN ${queueItems.id} IS NOT NULL THEN
+              json_build_object(
+                'id', ${queueItems.id},
+                'order', ${queueItems.order},
+                'song', (
+                  SELECT json_build_object(
+                    'id', s.id,
+                    'title', s.title,
+                    'author', s.author,
+                    'segments', (
+                      SELECT json_agg(
+                        json_build_object(
+                          'id', seg.id,
+                          'content', seg.content,
+                          'type', seg.type,
+                          'order', seg.order
+                        ) ORDER BY seg.order
+                      )
+                      FROM ${segments} seg
+                      WHERE seg.song_id = s.id
+                    )
+                  )
+                  FROM ${songs} s
+                  WHERE s.id = ${queueItems.songId}
+                )
+              )
+            ELSE NULL
+            END ORDER BY ${queueItems.order}
+          )`
         })
         .from(serviceQueues)
         .leftJoin(queueItems, eq(serviceQueues.id, queueItems.queueId))
-        .leftJoin(songs, eq(queueItems.songId, songs.id))
         .groupBy(serviceQueues.id)
         .orderBy(sql`${serviceQueues.createdAt} DESC`);
 
       // Format the response to handle null cases for items
       const formattedQueues = allQueues.map(queue => ({
         ...queue,
-        items: queue.items[0] === null ? [] : queue.items
+        items: queue.items[0] === null ? [] : queue.items.filter(Boolean)
       }));
 
       res.json(formattedQueues);
