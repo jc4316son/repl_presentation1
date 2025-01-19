@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer } from "http";
 import { db } from "@db";
 import { songs, segments, serviceQueues, queueItems } from "@db/schema";
-import { eq, sql, and } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 export function registerRoutes(app: Express) {
   const httpServer = createServer(app);
@@ -98,14 +98,36 @@ export function registerRoutes(app: Express) {
   // Queue routes
   app.get("/api/queues", async (_req, res) => {
     try {
-      console.log("Fetching queues...");
-      const queues = await db
-        .select()
+      const allQueues = await db
+        .select({
+          id: serviceQueues.id,
+          name: serviceQueues.name,
+          date: serviceQueues.date,
+          createdAt: serviceQueues.createdAt,
+          updatedAt: serviceQueues.updatedAt,
+          items: sql`json_agg(json_build_object(
+            'id', ${queueItems.id},
+            'order', ${queueItems.order},
+            'song', json_build_object(
+              'id', ${songs.id},
+              'title', ${songs.title},
+              'author', ${songs.author}
+            )
+          ) ORDER BY ${queueItems.order})`
+        })
         .from(serviceQueues)
+        .leftJoin(queueItems, eq(serviceQueues.id, queueItems.queueId))
+        .leftJoin(songs, eq(queueItems.songId, songs.id))
+        .groupBy(serviceQueues.id)
         .orderBy(sql`${serviceQueues.createdAt} DESC`);
 
-      console.log("Found queues:", queues);
-      res.json(queues);
+      // Format the response to handle null cases for items
+      const formattedQueues = allQueues.map(queue => ({
+        ...queue,
+        items: queue.items[0] === null ? [] : queue.items
+      }));
+
+      res.json(formattedQueues);
     } catch (error) {
       console.error('Error fetching queues:', error);
       res.status(500).json({ message: 'Failed to fetch queues' });
@@ -114,7 +136,6 @@ export function registerRoutes(app: Express) {
 
   app.post("/api/queues", async (req, res) => {
     try {
-      console.log("Creating queue with data:", req.body);
       const { name, date } = req.body;
       const [queue] = await db
         .insert(serviceQueues)
@@ -124,7 +145,6 @@ export function registerRoutes(app: Express) {
         })
         .returning();
 
-      console.log("Created queue:", queue);
       res.json(queue);
     } catch (error) {
       console.error('Error creating queue:', error);
@@ -158,69 +178,6 @@ export function registerRoutes(app: Express) {
     } catch (error) {
       console.error('Error adding song to queue:', error);
       res.status(500).json({ message: 'Failed to add song to queue' });
-    }
-  });
-
-  app.post("/api/queues/:queueId/reorder", async (req, res) => {
-    try {
-      const { queueId } = req.params;
-      const { itemId, newOrder } = req.body;
-
-      // Get all items in the queue
-      const items = await db
-        .select()
-        .from(queueItems)
-        .where(eq(queueItems.queueId, parseInt(queueId)))
-        .orderBy(queueItems.order);
-
-      // Find the item being moved
-      const itemIndex = items.findIndex(item => item.id === parseInt(itemId));
-      const item = items[itemIndex];
-      const oldOrder = item.order;
-
-      // Calculate the new orders
-      if (newOrder > oldOrder) {
-        // Moving down
-        await db.execute(sql`
-          UPDATE queue_items
-          SET "order" = "order" - 1
-          WHERE queue_id = ${parseInt(queueId)}
-          AND "order" > ${oldOrder}
-          AND "order" <= ${newOrder}
-        `);
-      } else {
-        // Moving up
-        await db.execute(sql`
-          UPDATE queue_items
-          SET "order" = "order" + 1
-          WHERE queue_id = ${parseInt(queueId)}
-          AND "order" >= ${newOrder}
-          AND "order" < ${oldOrder}
-        `);
-      }
-
-      // Update the moved item's order
-      await db.execute(sql`
-        UPDATE queue_items
-        SET "order" = ${newOrder}
-        WHERE id = ${parseInt(itemId)}
-      `);
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error reordering queue items:', error);
-      res.status(500).json({ message: 'Failed to reorder queue items' });
-    }
-  });
-
-  app.delete("/api/songs/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
-      await db.delete(songs).where(eq(songs.id, parseInt(id)));
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error deleting song:', error);
-      res.status(500).json({ message: 'Failed to delete song' });
     }
   });
 

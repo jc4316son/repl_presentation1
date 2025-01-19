@@ -3,9 +3,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import type { Song, ServiceQueue } from "@db/schema";
-import { Edit, Plus } from "lucide-react";
+import { Edit, Plus, Loader2 } from "lucide-react";
 import { useState } from "react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import SongForm from "./SongForm";
 import { format } from "date-fns";
 
@@ -18,42 +18,28 @@ export default function SongList({ displayWindow }: SongListProps) {
   const queryClient = useQueryClient();
   const [editingSong, setEditingSong] = useState<Song | null>(null);
 
-  const { data: songs } = useQuery<Song[]>({
+  const { data: songs, isLoading: isSongsLoading } = useQuery<Song[]>({
     queryKey: ["/api/songs"],
   });
 
-  const { data: queues, onSuccess, onError } = useQuery<ServiceQueue[]>({
+  const { data: queues, isLoading: isQueuesLoading } = useQuery<ServiceQueue[]>({
     queryKey: ["/api/queues"],
-    onSuccess: (data) => {
-      console.log("Queues loaded:", data);
-    },
-    onError: (error) => {
-      console.error("Error loading queues:", error);
-      toast({ 
-        title: "Failed to load queues",
-        variant: "destructive"
-      });
-    }
   });
 
   const createQueueMutation = useMutation({
     mutationFn: async () => {
       const now = new Date();
-      const data = {
-        name: `Service ${format(now, "PPP")}`,
-        date: now.toISOString(),
-      };
-      console.log("Creating queue with data:", data);
-
       const res = await fetch("/api/queues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          name: `Service ${format(now, "PPP")}`,
+          date: now.toISOString(),
+        }),
       });
 
       if (!res.ok) {
-        const error = await res.text();
-        throw new Error(`Failed to create queue: ${error}`);
+        throw new Error("Failed to create queue");
       }
 
       return res.json();
@@ -62,19 +48,13 @@ export default function SongList({ displayWindow }: SongListProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
       toast({ title: "Service queue created" });
     },
-    onError: (error) => {
-      console.error("Queue creation error:", error);
-      toast({ 
-        title: "Failed to create queue",
-        description: error.message,
-        variant: "destructive"
-      });
+    onError: () => {
+      toast({ title: "Failed to create queue", variant: "destructive" });
     },
   });
 
   const addToQueueMutation = useMutation({
     mutationFn: async ({ queueId, songId }: { queueId: number; songId: number }) => {
-      console.log("Adding song to queue:", { queueId, songId });
       const res = await fetch(`/api/queues/${queueId}/songs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,8 +62,7 @@ export default function SongList({ displayWindow }: SongListProps) {
       });
 
       if (!res.ok) {
-        const error = await res.text();
-        throw new Error(`Failed to add song to queue: ${error}`);
+        throw new Error("Failed to add song to queue");
       }
 
       return res.json();
@@ -92,21 +71,42 @@ export default function SongList({ displayWindow }: SongListProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
       toast({ title: "Song added to queue" });
     },
-    onError: (error) => {
-      console.error("Add to queue error:", error);
-      toast({ 
-        title: "Failed to add song to queue",
-        description: error.message,
-        variant: "destructive"
-      });
+    onError: () => {
+      toast({ title: "Failed to add song to queue", variant: "destructive" });
     },
   });
 
-  if (!songs?.length) {
-    return <div className="text-center py-8">No songs available</div>;
+  // Loading state
+  if (isSongsLoading || isQueuesLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
   }
 
-  const latestQueue = queues?.[0]; // Get the most recent queue (first in the array since we're ordering by DESC)
+  // No songs state
+  if (!songs?.length) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-muted-foreground mb-4">No songs available</p>
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Add New Song
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogTitle>Add New Song</DialogTitle>
+            <SongForm />
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  const latestQueue = queues && queues.length > 0 ? queues[0] : null;
 
   return (
     <>
@@ -138,22 +138,21 @@ export default function SongList({ displayWindow }: SongListProps) {
                     <Edit className="h-4 w-4 mr-2" />
                     Edit
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!latestQueue}
-                    onClick={() => {
-                      if (latestQueue) {
+                  {latestQueue && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
                         addToQueueMutation.mutate({
                           queueId: latestQueue.id,
                           songId: song.id,
                         });
-                      }
-                    }}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Queue
-                  </Button>
+                      }}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add to Queue
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -162,7 +161,8 @@ export default function SongList({ displayWindow }: SongListProps) {
       </div>
 
       <Dialog open={!!editingSong} onOpenChange={() => setEditingSong(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent>
+          <DialogTitle>Edit Song</DialogTitle>
           {editingSong && <SongForm editingSong={editingSong} onSuccess={() => setEditingSong(null)} />}
         </DialogContent>
       </Dialog>
