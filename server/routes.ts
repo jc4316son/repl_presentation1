@@ -236,16 +236,29 @@ export function registerRoutes(app: Express) {
     try {
       const { queueId, itemId } = req.params;
 
+      // Validate IDs
+      const numericQueueId = parseInt(queueId);
+      const numericItemId = parseInt(itemId);
+
+      if (isNaN(numericQueueId) || isNaN(numericItemId)) {
+        return res.status(400).json({ message: 'Invalid queue or item ID' });
+      }
+
       // Delete the queue item
-      await db
+      const result = await db
         .delete(queueItems)
-        .where(sql`${queueItems.id} = ${itemId} AND ${queueItems.queueId} = ${queueId}`);
+        .where(sql`${queueItems.id} = ${numericItemId} AND ${queueItems.queueId} = ${numericQueueId}`)
+        .returning();
+
+      if (!result.length) {
+        return res.status(404).json({ message: 'Queue item not found' });
+      }
 
       // Get remaining items to reorder them
       const remainingItems = await db
         .select()
         .from(queueItems)
-        .where(eq(queueItems.queueId, parseInt(queueId)))
+        .where(eq(queueItems.queueId, numericQueueId))
         .orderBy(queueItems.order);
 
       // Update order of remaining items

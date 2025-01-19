@@ -146,11 +146,14 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
     }
 
     try {
-      displayWindow.postMessage({
+      console.log("Sending segment to display:", segment);
+      const message = {
         type: "DISPLAY_SEGMENT",
         payload: { content: segment.content }
-      }, "*");
+      };
+      displayWindow.postMessage(message, "*");
     } catch (error) {
+      console.error("Error sending to display:", error);
       toast({
         title: "Failed to display segment",
         description: "There was an error communicating with the display window",
