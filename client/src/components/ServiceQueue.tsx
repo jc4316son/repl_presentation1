@@ -2,64 +2,90 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ServiceQueue, QueueItem, Song } from "@db/schema";
+import type { ServiceQueue, QueueItem, Song, Segment } from "@db/schema";
 import { format } from "date-fns";
-import { Calendar } from "lucide-react";
-import { DragDropContext, Droppable, Draggable } from "@dnd-kit/core";
+import { Calendar, GripVertical } from "lucide-react";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface ServiceQueueProps {
   displayWindow: Window | null;
 }
 
+interface SortableItemProps {
+  id: string;
+  children: React.ReactNode;
+}
+
+function SortableItem({ id, children }: SortableItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <div className="flex items-center">
+        <GripVertical className="h-5 w-5 mr-2 text-gray-400" />
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
-  const { data: queues } = useQuery<ServiceQueue[]>({
+  const { data: queues } = useQuery<(ServiceQueue & { items: (QueueItem & { song: Song & { segments: Segment[] } })[] })[]>({
     queryKey: ["/api/queues"],
   });
 
-  const { data: songs } = useQuery<Song[]>({
-    queryKey: ["/api/songs"],
-  });
-
-  const createQueueMutation = useMutation({
-    mutationFn: async (data: { name: string; date: Date }) => {
-      const res = await fetch("/api/queues", {
+  const reorderMutation = useMutation({
+    mutationFn: async ({ queueId, itemId, newOrder }: { queueId: number, itemId: number, newOrder: number }) => {
+      const res = await fetch(`/api/queues/${queueId}/reorder`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ itemId, newOrder }),
       });
-      if (!res.ok) throw new Error("Failed to create service queue");
+      if (!res.ok) throw new Error("Failed to reorder queue items");
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
-      toast({ title: "Service queue created" });
+      toast({ title: "Queue order updated" });
     },
     onError: () => {
-      toast({ title: "Failed to create service queue", variant: "destructive" });
+      toast({ title: "Failed to update queue order", variant: "destructive" });
     },
   });
 
-  const addSongToQueueMutation = useMutation({
-    mutationFn: async ({ queueId, songId }: { queueId: number; songId: number }) => {
-      const res = await fetch(`/api/queues/${queueId}/songs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ songId }),
-      });
-      if (!res.ok) throw new Error("Failed to add song to queue");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
-      toast({ title: "Song added to queue" });
-    },
-    onError: () => {
-      toast({ title: "Failed to add song to queue", variant: "destructive" });
-    },
-  });
+  const handleDragEnd = (result: any) => {
+    // Handle the drag end event and update order
+    if (!result.destination) return;
+
+    const [queueId, itemId] = result.active.id.split('-');
+    reorderMutation.mutate({
+      queueId: parseInt(queueId),
+      itemId: parseInt(itemId),
+      newOrder: result.destination.index,
+    });
+  };
 
   if (!queues?.length) {
     return <div className="text-center py-8">No service queues available</div>;
@@ -77,20 +103,41 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
                 {format(new Date(queue.date), "PPP")}
               </div>
             </div>
-            
-            {/* Add song selection and queue management here */}
-            <div className="space-y-2">
-              {songs?.map((song) => (
-                <Button
-                  key={song.id}
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => addSongToQueueMutation.mutate({ queueId: queue.id, songId: song.id })}
-                >
-                  {song.title}
-                </Button>
-              ))}
-            </div>
+
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={queue.items.map((item) => `${queue.id}-${item.id}`)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-4">
+                  {queue.items.map((item) => (
+                    <SortableItem key={`${queue.id}-${item.id}`} id={`${queue.id}-${item.id}`}>
+                      <Card>
+                        <CardContent className="p-4">
+                          <h4 className="font-medium mb-2">{item.song.title}</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {item.song.segments.map((segment) => (
+                              <Button
+                                key={segment.id}
+                                variant="outline"
+                                size="sm"
+                                className="justify-start"
+                              >
+                                {segment.type} {segment.order}
+                              </Button>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </SortableItem>
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           </CardContent>
         </Card>
       ))}

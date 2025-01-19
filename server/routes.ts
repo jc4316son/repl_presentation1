@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer } from "http";
 import { db } from "@db";
 import { songs, segments, serviceQueues, queueItems } from "@db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, gte } from "drizzle-orm";
 
 export function registerRoutes(app: Express) {
   const httpServer = createServer(app);
@@ -64,11 +64,114 @@ export function registerRoutes(app: Express) {
   // New routes for service queues
   app.get("/api/queues", async (_req, res) => {
     try {
-      const allQueues = await db.select().from(serviceQueues);
-      res.json(allQueues);
+      const queues = await db
+        .select()
+        .from(serviceQueues)
+        .leftJoin(
+          queueItems,
+          eq(serviceQueues.id, queueItems.queueId)
+        )
+        .leftJoin(
+          songs,
+          eq(queueItems.songId, songs.id)
+        )
+        .leftJoin(
+          segments,
+          eq(songs.id, segments.songId)
+        )
+        .orderBy(queueItems.order);
+
+      const queuesMap = new Map();
+      queues.forEach((row) => {
+        if (!queuesMap.has(row.service_queues.id)) {
+          queuesMap.set(row.service_queues.id, {
+            ...row.service_queues,
+            items: new Map(),
+          });
+        }
+
+        if (row.queue_items) {
+          const queue = queuesMap.get(row.service_queues.id);
+          if (!queue.items.has(row.queue_items.id)) {
+            queue.items.set(row.queue_items.id, {
+              ...row.queue_items,
+              song: {
+                ...row.songs,
+                segments: [],
+              },
+            });
+          }
+
+          if (row.segments) {
+            queue.items.get(row.queue_items.id).song.segments.push(row.segments);
+          }
+        }
+      });
+
+      const formattedQueues = Array.from(queuesMap.values()).map(queue => ({
+        ...queue,
+        items: Array.from(queue.items.values()),
+      }));
+
+      res.json(formattedQueues);
     } catch (error) {
       console.error('Error fetching queues:', error);
       res.status(500).json({ message: 'Failed to fetch queues' });
+    }
+  });
+
+  app.post("/api/queues/:queueId/reorder", async (req, res) => {
+    try {
+      const { queueId } = req.params;
+      const { itemId, newOrder } = req.body;
+
+      // Get the current item's order
+      const [currentItem] = await db
+        .select()
+        .from(queueItems)
+        .where(eq(queueItems.id, parseInt(itemId)));
+
+      if (!currentItem) {
+        return res.status(404).json({ message: "Queue item not found" });
+      }
+
+      // Update orders of all affected items
+      if (newOrder > currentItem.order) {
+        // Moving down: update items between old and new position
+        await db
+          .update(queueItems)
+          .set({ order: db.sql`${queueItems.order} - 1` })
+          .where(
+            and(
+              eq(queueItems.queueId, parseInt(queueId)),
+              gte(queueItems.order, currentItem.order),
+              queueItems.order <= newOrder
+            )
+          );
+      } else {
+        // Moving up: update items between new and old position
+        await db
+          .update(queueItems)
+          .set({ order: db.sql`${queueItems.order} + 1` })
+          .where(
+            and(
+              eq(queueItems.queueId, parseInt(queueId)),
+              queueItems.order >= newOrder,
+              queueItems.order < currentItem.order
+            )
+          );
+      }
+
+      // Update the moved item's order
+      await db
+        .update(queueItems)
+        .set({ order: newOrder })
+        .where(eq(queueItems.id, parseInt(itemId)));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error reordering queue items:', error);
+      res.status(500).json({ message: 'Failed to reorder queue items' });
     }
   });
 
