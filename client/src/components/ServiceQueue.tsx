@@ -8,6 +8,7 @@ import { Calendar, GripVertical, Plus } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { synchronizeDisplay } from "@/lib/display-sync";
 
 interface ServiceQueueProps {
   displayWindow: Window | null;
@@ -108,6 +109,15 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
     });
   };
 
+  const displaySegment = (segment: Segment) => {
+    if (displayWindow) {
+      synchronizeDisplay(displayWindow, {
+        type: "DISPLAY_SEGMENT",
+        payload: { content: segment.content }
+      });
+    }
+  };
+
   if (!queues?.length) {
     return (
       <div className="text-center py-8">
@@ -155,6 +165,7 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
                                 variant="outline"
                                 size="sm"
                                 className="justify-start"
+                                onClick={() => displaySegment(segment)}
                               >
                                 {segment.type} {segment.order}
                               </Button>
