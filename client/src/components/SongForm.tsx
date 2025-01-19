@@ -4,20 +4,19 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useForm } from "react-hook-form";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Minus } from "lucide-react";
-import type { Song } from "@db/schema";
-
-interface Segment {
-  content: string;
-  type: string;
-}
+import type { Song, Segment } from "@db/schema";
+import { useEffect } from "react";
 
 interface SongFormData {
   title: string;
   author: string;
-  segments: Segment[];
+  segments: {
+    content: string;
+    type: string;
+  }[];
 }
 
 const SEGMENT_TYPES = [
@@ -37,16 +36,29 @@ export default function SongForm({ editingSong, onSuccess }: SongFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const form = useForm<SongFormData>({
-    defaultValues: editingSong ? {
-      title: editingSong.title,
-      author: editingSong.author || "",
-      segments: [], // We'll need to fetch segments separately
-    } : {
-      title: "",
-      author: "",
+    defaultValues: {
+      title: editingSong?.title ?? "",
+      author: editingSong?.author ?? "",
       segments: [{ content: "", type: "verse" }],
     },
   });
+
+  // Fetch segments if editing
+  const { data: segments } = useQuery<Segment[]>({
+    queryKey: [`/api/songs/${editingSong?.id}`],
+    enabled: !!editingSong,
+  });
+
+  // Update form when segments are loaded
+  useEffect(() => {
+    if (segments) {
+      const formattedSegments = segments.map(segment => ({
+        content: segment.content,
+        type: segment.type,
+      }));
+      form.setValue("segments", formattedSegments);
+    }
+  }, [segments, form]);
 
   const mutation = useMutation({
     mutationFn: async (data: SongFormData) => {

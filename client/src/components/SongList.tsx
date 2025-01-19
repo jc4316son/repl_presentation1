@@ -70,19 +70,17 @@ export default function SongList({ displayWindow }: SongListProps) {
                     <Edit className="h-4 w-4 mr-2" />
                     Edit
                   </Button>
-                  {latestQueue && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => addToQueueMutation.mutate({
-                        queueId: latestQueue.id,
-                        songId: song.id,
-                      })}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Queue
-                    </Button>
-                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addToQueueMutation.mutate({
+                      queueId: latestQueue!.id,
+                      songId: song.id,
+                    })}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Queue
+                  </Button>
                 </div>
               </div>
             </CardContent>
