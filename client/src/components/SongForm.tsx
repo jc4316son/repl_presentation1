@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useForm } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Minus } from "lucide-react";
+import { Plus, Minus, Trash2 } from "lucide-react";
 import type { Song, Segment } from "@db/schema";
 import { useEffect } from "react";
 
@@ -93,6 +93,23 @@ export default function SongForm({ editingSong, onSuccess }: SongFormProps) {
     }
   };
 
+  const deleteSegmentMutation = useMutation({
+    mutationFn: async ({ songId, segmentId }: { songId: number; segmentId: number }) => {
+      const res = await fetch(`/api/songs/${songId}/segments/${segmentId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete segment");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/songs/${editingSong?.id}`] });
+      toast({ title: "Segment deleted successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete segment", variant: "destructive" });
+    },
+  });
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit((data) => mutation.mutate(data))} className="space-y-4">
@@ -152,15 +169,34 @@ export default function SongForm({ editingSong, onSuccess }: SongFormProps) {
                     </FormItem>
                   )}
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => removeSegment(index)}
-                  disabled={form.watch("segments").length === 1}
-                >
-                  <Minus className="h-4 w-4" />
-                </Button>
+                <div className="flex gap-2">
+                  {editingSong && segments && segments[index] && (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      onClick={() => {
+                        if (window.confirm("Are you sure you want to delete this segment?")) {
+                          deleteSegmentMutation.mutate({
+                            songId: editingSong.id,
+                            segmentId: segments[index].id,
+                          });
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => removeSegment(index)}
+                    disabled={form.watch("segments").length === 1}
+                  >
+                    <Minus className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
 
               <FormField
@@ -190,7 +226,7 @@ export default function SongForm({ editingSong, onSuccess }: SongFormProps) {
         </Button>
 
         <Button type="submit" className="w-full">
-          {editingSong ? 'Update Song' : 'Create Song'}
+          {editingSong ? "Update Song" : "Create Song"}
         </Button>
       </form>
     </Form>

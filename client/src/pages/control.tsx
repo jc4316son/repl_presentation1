@@ -5,21 +5,28 @@ import SongForm from "@/components/SongForm";
 import SongList from "@/components/SongList";
 import ServiceQueue from "@/components/ServiceQueue";
 import { ExternalLink } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 
 export default function Control() {
-  const [displayWindow, setDisplayWindow] = useState<Window | null>(null);
+  const displayWindowRef = useRef<Window | null>(null);
 
   const openDisplay = () => {
-    const display = window.open("/display", "presentation", "width=800,height=600");
-    setDisplayWindow(display);
+    if (displayWindowRef.current?.closed) {
+      displayWindowRef.current = null;
+    }
+
+    if (!displayWindowRef.current) {
+      displayWindowRef.current = window.open("/display", "presentation", "width=800,height=600");
+    } else {
+      displayWindowRef.current.focus();
+    }
   };
 
   useEffect(() => {
     return () => {
-      displayWindow?.close();
+      displayWindowRef.current?.close();
     };
-  }, [displayWindow]);
+  }, []);
 
   return (
     <div className="container mx-auto py-6">
@@ -40,13 +47,13 @@ export default function Control() {
               <TabsTrigger value="queue">Service Queue</TabsTrigger>
             </TabsList>
             <TabsContent value="songs">
-              <SongList displayWindow={displayWindow} />
+              <SongList displayWindow={displayWindowRef.current} />
             </TabsContent>
             <TabsContent value="new">
               <SongForm />
             </TabsContent>
             <TabsContent value="queue">
-              <ServiceQueue displayWindow={displayWindow} />
+              <ServiceQueue displayWindow={displayWindowRef.current} />
             </TabsContent>
           </Tabs>
         </CardContent>

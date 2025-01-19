@@ -95,6 +95,37 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  app.delete("/api/songs/:songId/segments/:segmentId", async (req, res) => {
+    try {
+      const { songId, segmentId } = req.params;
+
+      // Delete the segment
+      await db
+        .delete(segments)
+        .where(sql`${segments.id} = ${segmentId} AND ${segments.songId} = ${songId}`);
+
+      // Get remaining segments to reorder them
+      const remainingSegments = await db
+        .select()
+        .from(segments)
+        .where(eq(segments.songId, parseInt(songId)))
+        .orderBy(segments.order);
+
+      // Update order of remaining segments
+      for (let i = 0; i < remainingSegments.length; i++) {
+        await db
+          .update(segments)
+          .set({ order: i + 1 })
+          .where(eq(segments.id, remainingSegments[i].id));
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting segment:', error);
+      res.status(500).json({ message: 'Failed to delete segment' });
+    }
+  });
+
   // Queue routes
   app.get("/api/queues", async (_req, res) => {
     try {
