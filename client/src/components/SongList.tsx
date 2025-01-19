@@ -33,7 +33,7 @@ export default function SongList({ displayWindow }: SongListProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: `Service ${format(new Date(), "PPP")}`,
-          date: new Date().toISOString(),
+          date: format(new Date(), "yyyy-MM-dd'T'HH:mm:ss.SSSxxx"),
         }),
       });
       if (!res.ok) throw new Error("Failed to create queue");
