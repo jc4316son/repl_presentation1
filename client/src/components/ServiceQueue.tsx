@@ -181,10 +181,7 @@ export default function ServiceQueue() {
                             <Button
                               variant="destructive"
                               size="icon"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteItem(queue.id, item.id);
-                              }}
+                              onClick={() => handleDeleteItem(queue.id, item.id)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
