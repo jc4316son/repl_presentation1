@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ServiceQueue, QueueItem, Song, Segment } from "@db/schema";
 import { format } from "date-fns";
 import { Calendar, GripVertical, Plus, Trash2, Loader2 } from "lucide-react";
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { displayManager } from "@/lib/display-sync";
@@ -87,6 +87,33 @@ export default function ServiceQueue() {
     },
   });
 
+  const createQueueMutation = useMutation({
+    mutationFn: async () => {
+      const now = new Date();
+      const response = await fetch("/api/queues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: `Service ${format(now, "PPP")}`,
+          date: now.toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create queue");
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
+      toast({ title: "Service queue created" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create queue", variant: "destructive" });
+    },
+  });
+
   const handleDeleteItem = async (queueId: number, itemId: number) => {
     try {
       console.log('Handling delete for:', { queueId, itemId }); // Debug log
@@ -99,6 +126,26 @@ export default function ServiceQueue() {
   const displaySegment = (content: string) => {
     console.log('Displaying content:', content); // Debug log
     displayManager.displayContent(content);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    console.log('Drag ended:', event); // Debug log
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    // Parse the IDs to get queue and item IDs
+    const [activeQueueId, activeItemId] = active.id.toString().split('-').map(Number);
+    const [overQueueId, overItemId] = over.id.toString().split('-').map(Number);
+
+    if (activeQueueId !== overQueueId) {
+      return; // Don't allow dragging between different queues
+    }
+
+    toast({ title: "Reordering queue items..." });
+    // You would implement the reordering mutation here
   };
 
   // Loading state
