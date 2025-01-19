@@ -9,5 +9,12 @@ export function synchronizeDisplay(window: Window, message: DisplayMessage) {
     console.error("Display window is not available");
     return;
   }
-  window.postMessage(message, "*");
+
+  try {
+    window.postMessage(message, "*");
+    console.log("Message sent successfully");
+  } catch (error) {
+    console.error("Error sending message:", error);
+    throw error;
+  }
 }

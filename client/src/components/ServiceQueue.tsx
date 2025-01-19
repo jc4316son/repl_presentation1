@@ -59,29 +59,40 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
 
   const deleteItemMutation = useMutation({
     mutationFn: async ({ queueId, itemId }: { queueId: number; itemId: number }) => {
+      console.log("Deleting item:", { queueId, itemId });
       const res = await fetch(`/api/queues/${queueId}/songs/${itemId}`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error("Failed to remove song from queue");
+      if (!res.ok) {
+        const error = await res.text();
+        console.error("Delete error:", error);
+        throw new Error(error);
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
       toast({ title: "Song removed from queue" });
     },
-    onError: () => {
-      toast({ title: "Failed to remove song from queue", variant: "destructive" });
+    onError: (error) => {
+      console.error("Delete mutation error:", error);
+      toast({ 
+        title: "Failed to remove song from queue", 
+        description: error.message,
+        variant: "destructive" 
+      });
     },
   });
 
   const createQueueMutation = useMutation({
     mutationFn: async () => {
+      const now = new Date();
       const res = await fetch("/api/queues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: `Service ${format(new Date(), "PPP")}`,
-          date: new Date().toISOString(),
+          name: `Service ${format(now, "PPP")}`,
+          date: now.toISOString(),
         }),
       });
       if (!res.ok) throw new Error("Failed to create queue");
@@ -129,16 +140,28 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
   const displaySegment = (segment: Segment, displayWindow: Window | null) => {
     console.log("Attempting to display segment:", segment);
     console.log("Display window available:", !!displayWindow);
-    if (displayWindow) {
-      synchronizeDisplay(displayWindow, {
-        type: "DISPLAY_SEGMENT",
-        payload: { content: segment.content }
-      });
-    } else {
+
+    if (!displayWindow || displayWindow.closed) {
       console.error("Display window is not available");
       toast({
         title: "Display window not open",
         description: "Please open the display window first",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      synchronizeDisplay(displayWindow, {
+        type: "DISPLAY_SEGMENT",
+        payload: { content: segment.content }
+      });
+      console.log("Message sent to display window");
+    } catch (error) {
+      console.error("Error sending message to display window:", error);
+      toast({
+        title: "Failed to display segment",
+        description: "There was an error communicating with the display window",
         variant: "destructive"
       });
     }
@@ -147,7 +170,7 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
   if (!queues?.length) {
     return (
       <div className="text-center py-8">
-        <p className="mb-4">No service queue available</p>
+        <p className="text-muted-foreground mb-4">No service queue available</p>
         <Button onClick={() => createQueueMutation.mutate()}>
           <Plus className="h-4 w-4 mr-2" />
           Create Service Queue
