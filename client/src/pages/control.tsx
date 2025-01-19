@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import SongForm from "@/components/SongForm";
 import SongList from "@/components/SongList";
+import ServiceQueue from "@/components/ServiceQueue";
 import { ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -36,12 +37,16 @@ export default function Control() {
             <TabsList>
               <TabsTrigger value="songs">Songs</TabsTrigger>
               <TabsTrigger value="new">New Song</TabsTrigger>
+              <TabsTrigger value="queue">Service Queue</TabsTrigger>
             </TabsList>
             <TabsContent value="songs">
               <SongList displayWindow={displayWindow} />
             </TabsContent>
             <TabsContent value="new">
               <SongForm />
+            </TabsContent>
+            <TabsContent value="queue">
+              <ServiceQueue displayWindow={displayWindow} />
             </TabsContent>
           </Tabs>
         </CardContent>

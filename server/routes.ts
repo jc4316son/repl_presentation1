@@ -1,12 +1,13 @@
 import type { Express } from "express";
 import { createServer } from "http";
 import { db } from "@db";
-import { songs, segments } from "@db/schema";
+import { songs, segments, serviceQueues, queueItems } from "@db/schema";
 import { eq } from "drizzle-orm";
 
 export function registerRoutes(app: Express) {
   const httpServer = createServer(app);
 
+  // Existing routes
   app.get("/api/songs", async (_req, res) => {
     try {
       const allSongs = await db
@@ -15,7 +16,6 @@ export function registerRoutes(app: Express) {
         .leftJoin(segments, eq(songs.id, segments.songId))
         .orderBy(segments.order);
 
-      // Transform the flat results into nested structure
       const songsMap = new Map();
       allSongs.forEach((row) => {
         if (!songsMap.has(row.songs.id)) {
@@ -58,6 +58,60 @@ export function registerRoutes(app: Express) {
     } catch (error) {
       console.error('Error creating song:', error);
       res.status(500).json({ message: 'Failed to create song' });
+    }
+  });
+
+  // New routes for service queues
+  app.get("/api/queues", async (_req, res) => {
+    try {
+      const allQueues = await db.select().from(serviceQueues);
+      res.json(allQueues);
+    } catch (error) {
+      console.error('Error fetching queues:', error);
+      res.status(500).json({ message: 'Failed to fetch queues' });
+    }
+  });
+
+  app.post("/api/queues", async (req, res) => {
+    try {
+      const { name, date } = req.body;
+      const [queue] = await db
+        .insert(serviceQueues)
+        .values({ name, date })
+        .returning();
+      res.json(queue);
+    } catch (error) {
+      console.error('Error creating queue:', error);
+      res.status(500).json({ message: 'Failed to create queue' });
+    }
+  });
+
+  app.post("/api/queues/:queueId/songs", async (req, res) => {
+    try {
+      const { queueId } = req.params;
+      const { songId } = req.body;
+
+      // Get the current highest order
+      const currentItems = await db
+        .select()
+        .from(queueItems)
+        .where(eq(queueItems.queueId, parseInt(queueId)));
+
+      const order = currentItems.length + 1;
+
+      const [item] = await db
+        .insert(queueItems)
+        .values({
+          queueId: parseInt(queueId),
+          songId: parseInt(songId),
+          order,
+        })
+        .returning();
+
+      res.json(item);
+    } catch (error) {
+      console.error('Error adding song to queue:', error);
+      res.status(500).json({ message: 'Failed to add song to queue' });
     }
   });
 
