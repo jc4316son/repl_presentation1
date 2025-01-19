@@ -4,6 +4,32 @@ import { db } from "@db";
 import { songs, segments, serviceQueues, queueItems } from "@db/schema";
 import { eq, sql } from "drizzle-orm";
 
+// Add type definitions for the aggregated queue data
+interface QueueItemWithSong {
+  id: number;
+  order: number;
+  song: {
+    id: number;
+    title: string;
+    author: string | null;
+    segments: {
+      id: number;
+      content: string;
+      type: string;
+      order: number;
+    }[];
+  };
+}
+
+interface QueueWithItems {
+  id: number;
+  name: string;
+  date: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  items: QueueItemWithSong[];
+}
+
 export function registerRoutes(app: Express) {
   const httpServer = createServer(app);
 
@@ -136,49 +162,44 @@ export function registerRoutes(app: Express) {
           date: serviceQueues.date,
           createdAt: serviceQueues.createdAt,
           updatedAt: serviceQueues.updatedAt,
-          items: sql`json_agg(
-            CASE WHEN ${queueItems.id} IS NOT NULL THEN
-              json_build_object(
-                'id', ${queueItems.id},
-                'order', ${queueItems.order},
-                'song', (
-                  SELECT json_build_object(
-                    'id', s.id,
-                    'title', s.title,
-                    'author', s.author,
-                    'segments', (
-                      SELECT json_agg(
-                        json_build_object(
-                          'id', seg.id,
-                          'content', seg.content,
-                          'type', seg.type,
-                          'order', seg.order
-                        ) ORDER BY seg.order
+          items: sql<QueueItemWithSong[]>`
+            COALESCE(
+              json_agg(
+                CASE WHEN ${queueItems.id} IS NOT NULL THEN
+                  json_build_object(
+                    'id', ${queueItems.id},
+                    'order', ${queueItems.order},
+                    'song', json_build_object(
+                      'id', ${songs.id},
+                      'title', ${songs.title},
+                      'author', ${songs.author},
+                      'segments', (
+                        SELECT json_agg(
+                          json_build_object(
+                            'id', seg.id,
+                            'content', seg.content,
+                            'type', seg.type,
+                            'order', seg.order
+                          ) ORDER BY seg.order
+                        )
+                        FROM ${segments} seg
+                        WHERE seg.song_id = ${songs.id}
                       )
-                      FROM ${segments} seg
-                      WHERE seg.song_id = s.id
                     )
                   )
-                  FROM ${songs} s
-                  WHERE s.id = ${queueItems.songId}
-                )
-              )
-            ELSE NULL
-            END ORDER BY ${queueItems.order}
-          )`
+                ELSE NULL
+                END
+              ) FILTER (WHERE ${queueItems.id} IS NOT NULL),
+              '[]'
+            )`
         })
         .from(serviceQueues)
         .leftJoin(queueItems, eq(serviceQueues.id, queueItems.queueId))
+        .leftJoin(songs, eq(queueItems.songId, songs.id))
         .groupBy(serviceQueues.id)
         .orderBy(sql`${serviceQueues.createdAt} DESC`);
 
-      // Format the response to handle null cases for items
-      const formattedQueues = allQueues.map(queue => ({
-        ...queue,
-        items: queue.items[0] === null ? [] : queue.items.filter(Boolean)
-      }));
-
-      res.json(formattedQueues);
+      res.json(allQueues);
     } catch (error) {
       console.error('Error fetching queues:', error);
       res.status(500).json({ message: 'Failed to fetch queues' });
