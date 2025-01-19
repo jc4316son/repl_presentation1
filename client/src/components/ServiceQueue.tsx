@@ -8,7 +8,6 @@ import { Calendar, GripVertical, Plus, Trash2 } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { synchronizeDisplay } from "@/lib/display-sync";
 
 interface ServiceQueueProps {
   displayWindow: Window | null;
@@ -59,28 +58,23 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
 
   const deleteItemMutation = useMutation({
     mutationFn: async ({ queueId, itemId }: { queueId: number; itemId: number }) => {
-      console.log("Deleting item:", { queueId, itemId });
       const res = await fetch(`/api/queues/${queueId}/songs/${itemId}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
       });
+
       if (!res.ok) {
-        const error = await res.text();
-        console.error("Delete error:", error);
-        throw new Error(error);
+        throw new Error("Failed to delete song from queue");
       }
+
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
       toast({ title: "Song removed from queue" });
     },
-    onError: (error) => {
-      console.error("Delete mutation error:", error);
-      toast({ 
-        title: "Failed to remove song from queue", 
-        description: error.message,
-        variant: "destructive" 
-      });
+    onError: () => {
+      toast({ title: "Failed to remove song from queue", variant: "destructive" });
     },
   });
 
@@ -95,7 +89,11 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
           date: now.toISOString(),
         }),
       });
-      if (!res.ok) throw new Error("Failed to create queue");
+
+      if (!res.ok) {
+        throw new Error("Failed to create queue");
+      }
+
       return res.json();
     },
     onSuccess: () => {
@@ -138,11 +136,7 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
   };
 
   const displaySegment = (segment: Segment, displayWindow: Window | null) => {
-    console.log("Attempting to display segment:", segment);
-    console.log("Display window available:", !!displayWindow);
-
     if (!displayWindow || displayWindow.closed) {
-      console.error("Display window is not available");
       toast({
         title: "Display window not open",
         description: "Please open the display window first",
@@ -152,13 +146,11 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
     }
 
     try {
-      synchronizeDisplay(displayWindow, {
+      displayWindow.postMessage({
         type: "DISPLAY_SEGMENT",
         payload: { content: segment.content }
-      });
-      console.log("Message sent to display window");
+      }, "*");
     } catch (error) {
-      console.error("Error sending message to display window:", error);
       toast({
         title: "Failed to display segment",
         description: "There was an error communicating with the display window",
