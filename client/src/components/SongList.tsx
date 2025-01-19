@@ -22,48 +22,83 @@ export default function SongList({ displayWindow }: SongListProps) {
     queryKey: ["/api/songs"],
   });
 
-  const { data: queues } = useQuery<ServiceQueue[]>({
+  const { data: queues, onSuccess, onError } = useQuery<ServiceQueue[]>({
     queryKey: ["/api/queues"],
+    onSuccess: (data) => {
+      console.log("Queues loaded:", data);
+    },
+    onError: (error) => {
+      console.error("Error loading queues:", error);
+      toast({ 
+        title: "Failed to load queues",
+        variant: "destructive"
+      });
+    }
   });
 
   const createQueueMutation = useMutation({
     mutationFn: async () => {
+      const now = new Date();
+      const data = {
+        name: `Service ${format(now, "PPP")}`,
+        date: now.toISOString(),
+      };
+      console.log("Creating queue with data:", data);
+
       const res = await fetch("/api/queues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: `Service ${format(new Date(), "PPP")}`,
-          date: format(new Date(), "yyyy-MM-dd'T'HH:mm:ss.SSSxxx"),
-        }),
+        body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to create queue");
+
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(`Failed to create queue: ${error}`);
+      }
+
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
       toast({ title: "Service queue created" });
     },
-    onError: () => {
-      toast({ title: "Failed to create queue", variant: "destructive" });
+    onError: (error) => {
+      console.error("Queue creation error:", error);
+      toast({ 
+        title: "Failed to create queue",
+        description: error.message,
+        variant: "destructive"
+      });
     },
   });
 
   const addToQueueMutation = useMutation({
     mutationFn: async ({ queueId, songId }: { queueId: number; songId: number }) => {
+      console.log("Adding song to queue:", { queueId, songId });
       const res = await fetch(`/api/queues/${queueId}/songs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ songId }),
       });
-      if (!res.ok) throw new Error("Failed to add song to queue");
+
+      if (!res.ok) {
+        const error = await res.text();
+        throw new Error(`Failed to add song to queue: ${error}`);
+      }
+
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
       toast({ title: "Song added to queue" });
     },
-    onError: () => {
-      toast({ title: "Failed to add song to queue", variant: "destructive" });
+    onError: (error) => {
+      console.error("Add to queue error:", error);
+      toast({ 
+        title: "Failed to add song to queue",
+        description: error.message,
+        variant: "destructive"
+      });
     },
   });
 
@@ -71,7 +106,7 @@ export default function SongList({ displayWindow }: SongListProps) {
     return <div className="text-center py-8">No songs available</div>;
   }
 
-  const latestQueue = queues?.[queues?.length - 1];
+  const latestQueue = queues?.[0]; // Get the most recent queue (first in the array since we're ordering by DESC)
 
   return (
     <>

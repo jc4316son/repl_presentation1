@@ -98,46 +98,14 @@ export function registerRoutes(app: Express) {
   // Queue routes
   app.get("/api/queues", async (_req, res) => {
     try {
+      console.log("Fetching queues...");
       const queues = await db
         .select()
         .from(serviceQueues)
-        .leftJoin(queueItems, eq(serviceQueues.id, queueItems.queueId))
-        .leftJoin(songs, eq(queueItems.songId, songs.id))
-        .leftJoin(segments, eq(songs.id, segments.songId));
+        .orderBy(sql`${serviceQueues.createdAt} DESC`);
 
-      const queuesMap = new Map();
-      queues.forEach((row) => {
-        if (!queuesMap.has(row.service_queues.id)) {
-          queuesMap.set(row.service_queues.id, {
-            ...row.service_queues,
-            items: new Map(),
-          });
-        }
-
-        if (row.queue_items) {
-          const queue = queuesMap.get(row.service_queues.id);
-          if (!queue.items.has(row.queue_items.id)) {
-            queue.items.set(row.queue_items.id, {
-              ...row.queue_items,
-              song: {
-                ...row.songs,
-                segments: [],
-              },
-            });
-          }
-
-          if (row.segments) {
-            queue.items.get(row.queue_items.id).song.segments.push(row.segments);
-          }
-        }
-      });
-
-      const formattedQueues = Array.from(queuesMap.values()).map(queue => ({
-        ...queue,
-        items: Array.from(queue.items.values()).sort((a, b) => a.order - b.order),
-      }));
-
-      res.json(formattedQueues);
+      console.log("Found queues:", queues);
+      res.json(queues);
     } catch (error) {
       console.error('Error fetching queues:', error);
       res.status(500).json({ message: 'Failed to fetch queues' });
@@ -146,11 +114,17 @@ export function registerRoutes(app: Express) {
 
   app.post("/api/queues", async (req, res) => {
     try {
+      console.log("Creating queue with data:", req.body);
       const { name, date } = req.body;
       const [queue] = await db
         .insert(serviceQueues)
-        .values({ name, date })
+        .values({ 
+          name, 
+          date: new Date(date)
+        })
         .returning();
+
+      console.log("Created queue:", queue);
       res.json(queue);
     } catch (error) {
       console.error('Error creating queue:', error);
