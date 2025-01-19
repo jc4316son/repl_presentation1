@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ServiceQueue, QueueItem, Song, Segment } from "@db/schema";
 import { format } from "date-fns";
-import { Calendar, GripVertical, Plus, Trash2 } from "lucide-react";
+import { Calendar, GripVertical, Plus, Trash2, Loader2 } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -49,7 +49,7 @@ export default function ServiceQueue() {
     })
   );
 
-  const { data: queues, isError } = useQuery<(ServiceQueue & { 
+  const { data: queues, isLoading: isQueuesLoading } = useQuery<(ServiceQueue & { 
     items: (QueueItem & { 
       song: Song & { 
         segments: Segment[] 
@@ -61,6 +61,7 @@ export default function ServiceQueue() {
 
   const deleteItemMutation = useMutation({
     mutationFn: async ({ queueId, itemId }: { queueId: number; itemId: number }) => {
+      console.log('Deleting item:', { queueId, itemId }); // Debug log
       const response = await fetch(`/api/queues/${queueId}/songs/${itemId}`, {
         method: "DELETE",
       });
@@ -77,6 +78,7 @@ export default function ServiceQueue() {
       toast({ title: "Song removed from queue" });
     },
     onError: (error: Error) => {
+      console.error('Delete error:', error); // Debug log
       toast({ 
         title: "Failed to remove song",
         description: error.message,
@@ -85,40 +87,9 @@ export default function ServiceQueue() {
     },
   });
 
-  const createQueueMutation = useMutation({
-    mutationFn: async () => {
-      const now = new Date();
-      const response = await fetch("/api/queues", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: `Service ${format(now, "PPP")}`,
-          date: now.toISOString(),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to create queue");
-      }
-
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
-      toast({ title: "Service queue created" });
-    },
-    onError: () => {
-      toast({ title: "Failed to create queue", variant: "destructive" });
-    },
-  });
-
-  const handleDragEnd = (event: any) => {
-    if (!event.destination) return;
-    toast({ title: "Reordering items..." });
-  };
-
   const handleDeleteItem = async (queueId: number, itemId: number) => {
     try {
+      console.log('Handling delete for:', { queueId, itemId }); // Debug log
       await deleteItemMutation.mutateAsync({ queueId, itemId });
     } catch (error) {
       console.error("Delete failed:", error);
@@ -126,13 +97,15 @@ export default function ServiceQueue() {
   };
 
   const displaySegment = (content: string) => {
+    console.log('Displaying content:', content); // Debug log
     displayManager.displayContent(content);
   };
 
-  if (isError) {
+  // Loading state
+  if (isQueuesLoading) {
     return (
-      <div className="text-center py-8">
-        <p className="text-destructive">Failed to load service queues</p>
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin" />
       </div>
     );
   }
@@ -179,6 +152,7 @@ export default function ServiceQueue() {
                           <div className="flex justify-between items-start mb-4">
                             <h4 className="font-medium">{item.song.title}</h4>
                             <Button
+                              type="button"
                               variant="destructive"
                               size="icon"
                               onClick={() => handleDeleteItem(queue.id, item.id)}
@@ -190,6 +164,7 @@ export default function ServiceQueue() {
                             {item.song.segments.map((segment) => (
                               <Button
                                 key={segment.id}
+                                type="button"
                                 variant="outline"
                                 size="sm"
                                 className="justify-start"

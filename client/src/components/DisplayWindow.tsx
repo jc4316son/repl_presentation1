@@ -10,9 +10,11 @@ export default function DisplayWindow() {
 
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
+      console.log('Received message:', event.data); // Debug log
       const data = event.data as DisplayMessage;
 
       if (data?.type === 'UPDATE_DISPLAY' && typeof data.content === 'string') {
+        console.log('Updating content to:', data.content); // Debug log
         setContent(data.content);
       }
     }
@@ -20,7 +22,10 @@ export default function DisplayWindow() {
     window.addEventListener('message', handleMessage);
 
     // Notify parent window that display is ready
-    window.opener?.postMessage({ type: 'DISPLAY_READY' }, '*');
+    if (window.opener) {
+      console.log('Notifying parent window that display is ready'); // Debug log
+      window.opener.postMessage({ type: 'DISPLAY_READY' }, '*');
+    }
 
     return () => window.removeEventListener('message', handleMessage);
   }, []);
