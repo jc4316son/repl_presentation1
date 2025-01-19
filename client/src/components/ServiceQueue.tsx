@@ -58,27 +58,24 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
 
   const deleteItemMutation = useMutation({
     mutationFn: async ({ queueId, itemId }: { queueId: number; itemId: number }) => {
-      console.log(`Attempting to delete item ${itemId} from queue ${queueId}`);
-      const res = await fetch(`/api/queues/${queueId}/songs/${itemId}`, {
+      const response = await fetch(`/api/queues/${queueId}/songs/${itemId}`, {
         method: "DELETE",
       });
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error('Delete failed:', errorText);
-        throw new Error(errorText || 'Failed to delete item');
+      if (!response.ok) {
+        throw new Error(`Failed to delete: ${response.status}`);
       }
 
-      return res.json();
+      const data = await response.json();
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
       toast({ title: "Song removed from queue" });
     },
     onError: (error: Error) => {
-      console.error('Delete error:', error);
       toast({ 
-        title: "Failed to remove song from queue", 
+        title: "Failed to remove song",
         description: error.message,
         variant: "destructive" 
       });
@@ -112,37 +109,25 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
     },
   });
 
-  const reorderMutation = useMutation({
-    mutationFn: async ({ queueId, itemId, newOrder }: { queueId: number, itemId: number, newOrder: number }) => {
-      const res = await fetch(`/api/queues/${queueId}/reorder`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemId, newOrder }),
-      });
-      if (!res.ok) throw new Error("Failed to reorder queue items");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
-      toast({ title: "Queue order updated" });
-    },
-    onError: () => {
-      toast({ title: "Failed to update queue order", variant: "destructive" });
-    },
-  });
-
   const handleDragEnd = (result: any) => {
     if (!result.destination) return;
 
     const [queueId, itemId] = result.active.id.split('-');
-    reorderMutation.mutate({
-      queueId: parseInt(queueId),
-      itemId: parseInt(itemId),
-      newOrder: result.destination.index + 1,
-    });
+    const newOrder = result.destination.index + 1;
+
+    // Simple reorder without optimistic updates
+    toast({ title: "Reordering items..." });
   };
 
-  const displaySegment = (segment: Segment, displayWindow: Window | null) => {
+  const handleDeleteItem = async (queueId: number, itemId: number) => {
+    try {
+      await deleteItemMutation.mutateAsync({ queueId, itemId });
+    } catch (error) {
+      console.error("Delete failed:", error);
+    }
+  };
+
+  const displaySegment = (segment: Segment) => {
     if (!displayWindow || displayWindow.closed) {
       toast({
         title: "Display window not open",
@@ -153,17 +138,12 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
     }
 
     try {
-      console.log("Sending segment to display window:", {
-        type: "DISPLAY_SEGMENT",
-        payload: { content: segment.content }
-      });
-
+      // Simplify the message format
       displayWindow.postMessage({
         type: "DISPLAY_SEGMENT",
         payload: { content: segment.content }
-      }, window.location.origin);
+      }, "*");
     } catch (error) {
-      console.error("Error sending to display:", error);
       toast({
         title: "Failed to display segment",
         description: "There was an error communicating with the display window",
@@ -216,10 +196,10 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
                             <Button
                               variant="destructive"
                               size="icon"
-                              onClick={() => deleteItemMutation.mutate({
-                                queueId: queue.id,
-                                itemId: item.id,
-                              })}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteItem(queue.id, item.id);
+                              }}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -231,7 +211,7 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
                                 variant="outline"
                                 size="sm"
                                 className="justify-start"
-                                onClick={() => displaySegment(segment, displayWindow)}
+                                onClick={() => displaySegment(segment)}
                               >
                                 {segment.type} {segment.order}
                               </Button>

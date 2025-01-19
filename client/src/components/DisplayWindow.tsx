@@ -11,26 +11,16 @@ export default function DisplayWindow() {
   const [content, setContent] = useState<string>("");
 
   useEffect(() => {
-    function handleMessage(event: MessageEvent<DisplayMessage>) {
-      console.log("Display window received message:", event.data);
+    function handleMessage(event: MessageEvent) {
+      const message = event.data;
 
-      try {
-        const { type, payload } = event.data;
-        if (type === "DISPLAY_SEGMENT" && payload?.content) {
-          console.log("Setting new content:", payload.content);
-          setContent(payload.content);
-        }
-      } catch (error) {
-        console.error("Error processing message:", error);
+      if (message?.type === "DISPLAY_SEGMENT" && message?.payload?.content) {
+        setContent(message.payload.content);
       }
     }
 
     window.addEventListener("message", handleMessage);
-    console.log("Display window ready to receive messages");
-
-    return () => {
-      window.removeEventListener("message", handleMessage);
-    };
+    return () => window.removeEventListener("message", handleMessage);
   }, []);
 
   return (
