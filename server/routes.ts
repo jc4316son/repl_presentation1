@@ -236,18 +236,10 @@ export function registerRoutes(app: Express) {
     try {
       const { queueId, itemId } = req.params;
 
-      // Validate IDs
-      const numericQueueId = parseInt(queueId);
-      const numericItemId = parseInt(itemId);
-
-      if (isNaN(numericQueueId) || isNaN(numericItemId)) {
-        return res.status(400).json({ message: 'Invalid queue or item ID' });
-      }
-
       // Delete the queue item
       const result = await db
         .delete(queueItems)
-        .where(sql`${queueItems.id} = ${numericItemId} AND ${queueItems.queueId} = ${numericQueueId}`)
+        .where(eq(queueItems.id, parseInt(itemId)))
         .returning();
 
       if (!result.length) {
@@ -258,7 +250,7 @@ export function registerRoutes(app: Express) {
       const remainingItems = await db
         .select()
         .from(queueItems)
-        .where(eq(queueItems.queueId, numericQueueId))
+        .where(eq(queueItems.queueId, parseInt(queueId)))
         .orderBy(queueItems.order);
 
       // Update order of remaining items

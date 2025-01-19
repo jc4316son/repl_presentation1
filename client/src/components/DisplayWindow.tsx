@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 
 interface DisplayMessage {
   type: string;
-  payload: any;
+  payload: {
+    content: string;
+  };
 }
 
 export default function DisplayWindow() {
@@ -14,7 +16,6 @@ export default function DisplayWindow() {
 
       try {
         const { type, payload } = event.data;
-
         if (type === "DISPLAY_SEGMENT" && payload?.content) {
           console.log("Setting new content:", payload.content);
           setContent(payload.content);

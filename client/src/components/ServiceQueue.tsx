@@ -58,13 +58,15 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
 
   const deleteItemMutation = useMutation({
     mutationFn: async ({ queueId, itemId }: { queueId: number; itemId: number }) => {
+      console.log(`Attempting to delete item ${itemId} from queue ${queueId}`);
       const res = await fetch(`/api/queues/${queueId}/songs/${itemId}`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
       });
 
       if (!res.ok) {
-        throw new Error("Failed to delete song from queue");
+        const errorText = await res.text();
+        console.error('Delete failed:', errorText);
+        throw new Error(errorText || 'Failed to delete item');
       }
 
       return res.json();
@@ -73,8 +75,13 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
       toast({ title: "Song removed from queue" });
     },
-    onError: () => {
-      toast({ title: "Failed to remove song from queue", variant: "destructive" });
+    onError: (error: Error) => {
+      console.error('Delete error:', error);
+      toast({ 
+        title: "Failed to remove song from queue", 
+        description: error.message,
+        variant: "destructive" 
+      });
     },
   });
 
@@ -146,12 +153,15 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
     }
 
     try {
-      console.log("Sending segment to display:", segment);
-      const message = {
+      console.log("Sending segment to display window:", {
         type: "DISPLAY_SEGMENT",
         payload: { content: segment.content }
-      };
-      displayWindow.postMessage(message, "*");
+      });
+
+      displayWindow.postMessage({
+        type: "DISPLAY_SEGMENT",
+        payload: { content: segment.content }
+      }, window.location.origin);
     } catch (error) {
       console.error("Error sending to display:", error);
       toast({
