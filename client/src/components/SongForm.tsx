@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Minus } from "lucide-react";
+import type { Song } from "@db/schema";
 
 interface Segment {
   content: string;
@@ -27,14 +28,44 @@ const SEGMENT_TYPES = [
   "ending",
 ] as const;
 
-export default function SongForm() {
+interface SongFormProps {
+  editingSong?: Song;
+  onSuccess?: () => void;
+}
+
+export default function SongForm({ editingSong, onSuccess }: SongFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const form = useForm<SongFormData>({
-    defaultValues: {
+    defaultValues: editingSong ? {
+      title: editingSong.title,
+      author: editingSong.author || "",
+      segments: [], // We'll need to fetch segments separately
+    } : {
       title: "",
       author: "",
       segments: [{ content: "", type: "verse" }],
+    },
+  });
+
+  const mutation = useMutation({
+    mutationFn: async (data: SongFormData) => {
+      const res = await fetch(editingSong ? `/api/songs/${editingSong.id}` : "/api/songs", {
+        method: editingSong ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error(`Failed to ${editingSong ? 'update' : 'create'} song`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/songs"] });
+      toast({ title: `Song ${editingSong ? 'updated' : 'created'} successfully` });
+      form.reset();
+      onSuccess?.();
+    },
+    onError: () => {
+      toast({ title: `Failed to ${editingSong ? 'update' : 'create'} song`, variant: "destructive" });
     },
   });
 
@@ -49,26 +80,6 @@ export default function SongForm() {
       form.setValue("segments", segments.filter((_, i) => i !== index));
     }
   };
-
-  const mutation = useMutation({
-    mutationFn: async (data: SongFormData) => {
-      const res = await fetch("/api/songs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to create song");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/songs"] });
-      toast({ title: "Song created successfully" });
-      form.reset();
-    },
-    onError: () => {
-      toast({ title: "Failed to create song", variant: "destructive" });
-    },
-  });
 
   return (
     <Form {...form}>
@@ -166,7 +177,9 @@ export default function SongForm() {
           Add Segment
         </Button>
 
-        <Button type="submit" className="w-full">Create Song</Button>
+        <Button type="submit" className="w-full">
+          {editingSong ? 'Update Song' : 'Create Song'}
+        </Button>
       </form>
     </Form>
   );

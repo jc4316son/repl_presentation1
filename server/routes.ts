@@ -2,37 +2,38 @@ import type { Express } from "express";
 import { createServer } from "http";
 import { db } from "@db";
 import { songs, segments, serviceQueues, queueItems } from "@db/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and } from "drizzle-orm";
 
 export function registerRoutes(app: Express) {
   const httpServer = createServer(app);
 
-  // Existing routes
   app.get("/api/songs", async (_req, res) => {
     try {
       const allSongs = await db
         .select()
         .from(songs)
-        .leftJoin(segments, eq(songs.id, segments.songId))
-        .orderBy(segments.order);
+        .orderBy(songs.title);
 
-      const songsMap = new Map();
-      allSongs.forEach((row) => {
-        if (!songsMap.has(row.songs.id)) {
-          songsMap.set(row.songs.id, {
-            ...row.songs,
-            segments: [],
-          });
-        }
-        if (row.segments) {
-          songsMap.get(row.songs.id).segments.push(row.segments);
-        }
-      });
-
-      res.json(Array.from(songsMap.values()));
+      res.json(allSongs);
     } catch (error) {
       console.error('Error fetching songs:', error);
       res.status(500).json({ message: 'Failed to fetch songs' });
+    }
+  });
+
+  app.get("/api/songs/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const songSegments = await db
+        .select()
+        .from(segments)
+        .where(eq(segments.songId, parseInt(id)))
+        .orderBy(segments.order);
+
+      res.json(songSegments);
+    } catch (error) {
+      console.error('Error fetching song segments:', error);
+      res.status(500).json({ message: 'Failed to fetch song segments' });
     }
   });
 
@@ -58,6 +59,39 @@ export function registerRoutes(app: Express) {
     } catch (error) {
       console.error('Error creating song:', error);
       res.status(500).json({ message: 'Failed to create song' });
+    }
+  });
+
+  app.put("/api/songs/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { title, author, segments: segmentData } = req.body;
+
+      // Update song details
+      await db
+        .update(songs)
+        .set({ title, author })
+        .where(eq(songs.id, parseInt(id)));
+
+      // Delete existing segments
+      await db
+        .delete(segments)
+        .where(eq(segments.songId, parseInt(id)));
+
+      // Insert new segments
+      const songSegments = segmentData.map((segment: any, index: number) => ({
+        songId: parseInt(id),
+        content: segment.content,
+        type: segment.type,
+        order: index + 1,
+      }));
+
+      await db.insert(segments).values(songSegments);
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error updating song:', error);
+      res.status(500).json({ message: 'Failed to update song' });
     }
   });
 
