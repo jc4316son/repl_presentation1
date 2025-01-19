@@ -4,50 +4,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ServiceQueue, QueueItem, Song, Segment } from "@db/schema";
 import { format } from "date-fns";
-import { Calendar, GripVertical, Plus, Trash2, Loader2 } from "lucide-react";
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { Calendar, Plus, Trash2, Loader2 } from "lucide-react";
 import { displayManager } from "@/lib/display-sync";
-
-interface SortableItemProps {
-  id: string;
-  children: React.ReactNode;
-}
-
-function SortableItem({ id, children }: SortableItemProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-  } = useSortable({ id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <div className="flex items-center">
-        <GripVertical className="h-5 w-5 mr-2 text-gray-400" />
-        {children}
-      </div>
-    </div>
-  );
-}
 
 export default function ServiceQueue() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
 
   const { data: queues, isLoading: isQueuesLoading } = useQuery<(ServiceQueue & { 
     items: (QueueItem & { 
@@ -61,14 +23,12 @@ export default function ServiceQueue() {
 
   const deleteItemMutation = useMutation({
     mutationFn: async ({ queueId, itemId }: { queueId: number; itemId: number }) => {
-      console.log('Deleting item:', { queueId, itemId }); // Debug log
       const response = await fetch(`/api/queues/${queueId}/songs/${itemId}`, {
         method: "DELETE",
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to delete item: ${errorText}`);
+        throw new Error("Failed to delete item");
       }
 
       return response.json();
@@ -77,13 +37,8 @@ export default function ServiceQueue() {
       queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
       toast({ title: "Song removed from queue" });
     },
-    onError: (error: Error) => {
-      console.error('Delete error:', error); // Debug log
-      toast({ 
-        title: "Failed to remove song",
-        description: error.message,
-        variant: "destructive" 
-      });
+    onError: () => {
+      toast({ title: "Failed to remove song", variant: "destructive" });
     },
   });
 
@@ -114,38 +69,8 @@ export default function ServiceQueue() {
     },
   });
 
-  const handleDeleteItem = async (queueId: number, itemId: number) => {
-    try {
-      console.log('Handling delete for:', { queueId, itemId }); // Debug log
-      await deleteItemMutation.mutateAsync({ queueId, itemId });
-    } catch (error) {
-      console.error("Delete failed:", error);
-    }
-  };
-
   const displaySegment = (content: string) => {
-    console.log('Displaying content:', content); // Debug log
     displayManager.displayContent(content);
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    console.log('Drag ended:', event); // Debug log
-    const { active, over } = event;
-
-    if (!over || active.id === over.id) {
-      return;
-    }
-
-    // Parse the IDs to get queue and item IDs
-    const [activeQueueId, activeItemId] = active.id.toString().split('-').map(Number);
-    const [overQueueId, overItemId] = over.id.toString().split('-').map(Number);
-
-    if (activeQueueId !== overQueueId) {
-      return; // Don't allow dragging between different queues
-    }
-
-    toast({ title: "Reordering queue items..." });
-    // You would implement the reordering mutation here
   };
 
   // Loading state
@@ -182,52 +107,39 @@ export default function ServiceQueue() {
               </div>
             </div>
 
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={queue.items.map((item) => `${queue.id}-${item.id}`)}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="space-y-4">
-                  {queue.items.map((item) => (
-                    <SortableItem key={`${queue.id}-${item.id}`} id={`${queue.id}-${item.id}`}>
-                      <Card className="w-full">
-                        <CardContent className="p-4">
-                          <div className="flex justify-between items-start mb-4">
-                            <h4 className="font-medium">{item.song.title}</h4>
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="icon"
-                              onClick={() => handleDeleteItem(queue.id, item.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            {item.song.segments.map((segment) => (
-                              <Button
-                                key={segment.id}
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="justify-start"
-                                onClick={() => displaySegment(segment.content)}
-                              >
-                                {segment.type} {segment.order}
-                              </Button>
-                            ))}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </SortableItem>
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
+            <div className="space-y-4">
+              {queue.items.map((item) => (
+                <Card key={item.id}>
+                  <CardContent className="p-4">
+                    <div className="flex justify-between items-start mb-4">
+                      <h4 className="font-medium">{item.song.title}</h4>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon"
+                        onClick={() => deleteItemMutation.mutate({ queueId: queue.id, itemId: item.id })}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {item.song.segments.map((segment) => (
+                        <Button
+                          key={segment.id}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="justify-start"
+                          onClick={() => displaySegment(segment.content)}
+                        >
+                          {segment.type} {segment.order}
+                        </Button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </CardContent>
         </Card>
       ))}
