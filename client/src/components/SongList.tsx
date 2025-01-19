@@ -7,6 +7,7 @@ import { Edit, Plus } from "lucide-react";
 import { useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import SongForm from "./SongForm";
+import { format } from "date-fns";
 
 interface SongListProps {
   displayWindow: Window | null;
@@ -23,6 +24,28 @@ export default function SongList({ displayWindow }: SongListProps) {
 
   const { data: queues } = useQuery<ServiceQueue[]>({
     queryKey: ["/api/queues"],
+  });
+
+  const createQueueMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/queues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: `Service ${format(new Date(), "PPP")}`,
+          date: new Date().toISOString(),
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to create queue");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
+      toast({ title: "Service queue created" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create queue", variant: "destructive" });
+    },
   });
 
   const addToQueueMutation = useMutation({
@@ -48,10 +71,20 @@ export default function SongList({ displayWindow }: SongListProps) {
     return <div className="text-center py-8">No songs available</div>;
   }
 
-  const latestQueue = queues?.[queues.length - 1];
+  const latestQueue = queues?.[queues?.length - 1];
 
   return (
     <>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-semibold">Available Songs</h2>
+        {!latestQueue && (
+          <Button onClick={() => createQueueMutation.mutate()}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Service Queue
+          </Button>
+        )}
+      </div>
+
       <div className="space-y-4">
         {songs.map((song) => (
           <Card key={song.id}>
@@ -70,23 +103,22 @@ export default function SongList({ displayWindow }: SongListProps) {
                     <Edit className="h-4 w-4 mr-2" />
                     Edit
                   </Button>
-                  {latestQueue && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (latestQueue) {
-                          addToQueueMutation.mutate({
-                            queueId: latestQueue.id,
-                            songId: song.id,
-                          });
-                        }
-                      }}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Queue
-                    </Button>
-                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!latestQueue}
+                    onClick={() => {
+                      if (latestQueue) {
+                        addToQueueMutation.mutate({
+                          queueId: latestQueue.id,
+                          songId: song.id,
+                        });
+                      }
+                    }}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Queue
+                  </Button>
                 </div>
               </div>
             </CardContent>
