@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 interface DisplayMessage {
-  type: string;
+  type: 'DISPLAY_SEGMENT';
   payload: {
     content: string;
   };
@@ -12,9 +12,9 @@ export default function DisplayWindow() {
 
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
-      const message = event.data;
+      const message = event.data as DisplayMessage;
 
-      if (message?.type === "DISPLAY_SEGMENT" && message?.payload?.content) {
+      if (message?.type === 'DISPLAY_SEGMENT' && message?.payload?.content) {
         setContent(message.payload.content);
       }
     }

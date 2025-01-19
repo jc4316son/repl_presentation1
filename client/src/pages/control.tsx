@@ -5,48 +5,29 @@ import SongForm from "@/components/SongForm";
 import SongList from "@/components/SongList";
 import ServiceQueue from "@/components/ServiceQueue";
 import { ExternalLink } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { useEffect, useState } from "react";
+import { displayManager } from "@/lib/display-sync";
 
 export default function Control() {
-  const displayWindowRef = useRef<Window | null>(null);
   const [isDisplayOpen, setIsDisplayOpen] = useState(false);
-  const { toast } = useToast();
 
-  const openDisplay = () => {
-    if (displayWindowRef.current?.closed) {
-      displayWindowRef.current = null;
-      setIsDisplayOpen(false);
-    }
-
-    if (!displayWindowRef.current) {
-      const newWindow = window.open("/display", "presentation", "width=800,height=600");
-      displayWindowRef.current = newWindow;
-      setIsDisplayOpen(!!newWindow);
-
-      if (!newWindow) {
-        toast({
-          title: "Could not open display window",
-          description: "Please allow pop-ups for this site",
-          variant: "destructive"
-        });
-      }
+  const toggleDisplay = () => {
+    if (!isDisplayOpen) {
+      displayManager.openDisplay();
     } else {
-      displayWindowRef.current.focus();
+      displayManager.closeDisplay();
     }
+    setIsDisplayOpen(!isDisplayOpen);
   };
 
   useEffect(() => {
     const checkWindow = setInterval(() => {
-      if (displayWindowRef.current?.closed) {
-        displayWindowRef.current = null;
-        setIsDisplayOpen(false);
-      }
+      setIsDisplayOpen(displayManager.isDisplayOpen());
     }, 1000);
 
     return () => {
       clearInterval(checkWindow);
-      displayWindowRef.current?.close();
+      displayManager.closeDisplay();
     };
   }, []);
 
@@ -54,7 +35,7 @@ export default function Control() {
     <div className="container mx-auto py-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Church Presentation System</h1>
-        <Button onClick={openDisplay} variant={isDisplayOpen ? "outline" : "default"}>
+        <Button onClick={toggleDisplay} variant={isDisplayOpen ? "outline" : "default"}>
           <ExternalLink className="mr-2 h-4 w-4" />
           {isDisplayOpen ? "Display Window Open" : "Open Display"}
         </Button>
@@ -69,13 +50,13 @@ export default function Control() {
               <TabsTrigger value="queue">Service Queue</TabsTrigger>
             </TabsList>
             <TabsContent value="songs">
-              <SongList displayWindow={displayWindowRef.current} />
+              <SongList />
             </TabsContent>
             <TabsContent value="new">
               <SongForm />
             </TabsContent>
             <TabsContent value="queue">
-              <ServiceQueue displayWindow={displayWindowRef.current} />
+              <ServiceQueue />
             </TabsContent>
           </Tabs>
         </CardContent>

@@ -8,10 +8,7 @@ import { Calendar, GripVertical, Plus, Trash2 } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-
-interface ServiceQueueProps {
-  displayWindow: Window | null;
-}
+import { displayManager } from "@/lib/display-sync";
 
 interface SortableItemProps {
   id: string;
@@ -42,7 +39,7 @@ function SortableItem({ id, children }: SortableItemProps) {
   );
 }
 
-export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
+export default function ServiceQueue() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const sensors = useSensors(
@@ -52,7 +49,13 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
     })
   );
 
-  const { data: queues } = useQuery<(ServiceQueue & { items: (QueueItem & { song: Song & { segments: Segment[] } })[] })[]>({
+  const { data: queues, isError } = useQuery<(ServiceQueue & { 
+    items: (QueueItem & { 
+      song: Song & { 
+        segments: Segment[] 
+      } 
+    })[] 
+  })[]>({
     queryKey: ["/api/queues"],
   });
 
@@ -63,11 +66,11 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to delete: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`Failed to delete item: ${errorText}`);
       }
 
-      const data = await response.json();
-      return data;
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
@@ -85,7 +88,7 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
   const createQueueMutation = useMutation({
     mutationFn: async () => {
       const now = new Date();
-      const res = await fetch("/api/queues", {
+      const response = await fetch("/api/queues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -94,11 +97,11 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
         }),
       });
 
-      if (!res.ok) {
+      if (!response.ok) {
         throw new Error("Failed to create queue");
       }
 
-      return res.json();
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
@@ -109,13 +112,8 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
     },
   });
 
-  const handleDragEnd = (result: any) => {
-    if (!result.destination) return;
-
-    const [queueId, itemId] = result.active.id.split('-');
-    const newOrder = result.destination.index + 1;
-
-    // Simple reorder without optimistic updates
+  const handleDragEnd = (event: any) => {
+    if (!event.destination) return;
     toast({ title: "Reordering items..." });
   };
 
@@ -128,29 +126,16 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
   };
 
   const displaySegment = (segment: Segment) => {
-    if (!displayWindow || displayWindow.closed) {
-      toast({
-        title: "Display window not open",
-        description: "Please open the display window first",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      // Simplify the message format
-      displayWindow.postMessage({
-        type: "DISPLAY_SEGMENT",
-        payload: { content: segment.content }
-      }, "*");
-    } catch (error) {
-      toast({
-        title: "Failed to display segment",
-        description: "There was an error communicating with the display window",
-        variant: "destructive"
-      });
-    }
+    displayManager.displaySegment(segment.content);
   };
+
+  if (isError) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-destructive">Failed to load service queues</p>
+      </div>
+    );
+  }
 
   if (!queues?.length) {
     return (
