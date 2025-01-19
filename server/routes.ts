@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer } from "http";
 import { db } from "@db";
 import { songs, segments, serviceQueues, queueItems } from "@db/schema";
-import { eq, and, gte } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 export function registerRoutes(app: Express) {
   const httpServer = createServer(app);
@@ -61,25 +61,15 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  // New routes for service queues
+  // Queue routes
   app.get("/api/queues", async (_req, res) => {
     try {
       const queues = await db
         .select()
         .from(serviceQueues)
-        .leftJoin(
-          queueItems,
-          eq(serviceQueues.id, queueItems.queueId)
-        )
-        .leftJoin(
-          songs,
-          eq(queueItems.songId, songs.id)
-        )
-        .leftJoin(
-          segments,
-          eq(songs.id, segments.songId)
-        )
-        .orderBy(queueItems.order);
+        .leftJoin(queueItems, eq(serviceQueues.id, queueItems.queueId))
+        .leftJoin(songs, eq(queueItems.songId, songs.id))
+        .leftJoin(segments, eq(songs.id, segments.songId));
 
       const queuesMap = new Map();
       queues.forEach((row) => {
@@ -110,68 +100,13 @@ export function registerRoutes(app: Express) {
 
       const formattedQueues = Array.from(queuesMap.values()).map(queue => ({
         ...queue,
-        items: Array.from(queue.items.values()),
+        items: Array.from(queue.items.values()).sort((a, b) => a.order - b.order),
       }));
 
       res.json(formattedQueues);
     } catch (error) {
       console.error('Error fetching queues:', error);
       res.status(500).json({ message: 'Failed to fetch queues' });
-    }
-  });
-
-  app.post("/api/queues/:queueId/reorder", async (req, res) => {
-    try {
-      const { queueId } = req.params;
-      const { itemId, newOrder } = req.body;
-
-      // Get the current item's order
-      const [currentItem] = await db
-        .select()
-        .from(queueItems)
-        .where(eq(queueItems.id, parseInt(itemId)));
-
-      if (!currentItem) {
-        return res.status(404).json({ message: "Queue item not found" });
-      }
-
-      // Update orders of all affected items
-      if (newOrder > currentItem.order) {
-        // Moving down: update items between old and new position
-        await db
-          .update(queueItems)
-          .set({ order: db.sql`${queueItems.order} - 1` })
-          .where(
-            and(
-              eq(queueItems.queueId, parseInt(queueId)),
-              gte(queueItems.order, currentItem.order),
-              queueItems.order <= newOrder
-            )
-          );
-      } else {
-        // Moving up: update items between new and old position
-        await db
-          .update(queueItems)
-          .set({ order: db.sql`${queueItems.order} + 1` })
-          .where(
-            and(
-              eq(queueItems.queueId, parseInt(queueId)),
-              queueItems.order >= newOrder,
-              queueItems.order < currentItem.order
-            )
-          );
-      }
-
-      // Update the moved item's order
-      await db
-        .update(queueItems)
-        .set({ order: newOrder })
-        .where(eq(queueItems.id, parseInt(itemId)));
-
-      res.json({ success: true });
-    } catch (error) {
-      console.error('Error reordering queue items:', error);
-      res.status(500).json({ message: 'Failed to reorder queue items' });
     }
   });
 
@@ -215,6 +150,58 @@ export function registerRoutes(app: Express) {
     } catch (error) {
       console.error('Error adding song to queue:', error);
       res.status(500).json({ message: 'Failed to add song to queue' });
+    }
+  });
+
+  app.post("/api/queues/:queueId/reorder", async (req, res) => {
+    try {
+      const { queueId } = req.params;
+      const { itemId, newOrder } = req.body;
+
+      // Get all items in the queue
+      const items = await db
+        .select()
+        .from(queueItems)
+        .where(eq(queueItems.queueId, parseInt(queueId)))
+        .orderBy(queueItems.order);
+
+      // Find the item being moved
+      const itemIndex = items.findIndex(item => item.id === parseInt(itemId));
+      const item = items[itemIndex];
+      const oldOrder = item.order;
+
+      // Calculate the new orders
+      if (newOrder > oldOrder) {
+        // Moving down
+        await db.execute(sql`
+          UPDATE queue_items
+          SET "order" = "order" - 1
+          WHERE queue_id = ${parseInt(queueId)}
+          AND "order" > ${oldOrder}
+          AND "order" <= ${newOrder}
+        `);
+      } else {
+        // Moving up
+        await db.execute(sql`
+          UPDATE queue_items
+          SET "order" = "order" + 1
+          WHERE queue_id = ${parseInt(queueId)}
+          AND "order" >= ${newOrder}
+          AND "order" < ${oldOrder}
+        `);
+      }
+
+      // Update the moved item's order
+      await db.execute(sql`
+        UPDATE queue_items
+        SET "order" = ${newOrder}
+        WHERE id = ${parseInt(itemId)}
+      `);
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error reordering queue items:', error);
+      res.status(500).json({ message: 'Failed to reorder queue items' });
     }
   });
 

@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ServiceQueue, QueueItem, Song, Segment } from "@db/schema";
 import { format } from "date-fns";
-import { Calendar, GripVertical } from "lucide-react";
+import { Calendar, GripVertical, Plus } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -56,6 +56,28 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
     queryKey: ["/api/queues"],
   });
 
+  const createQueueMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/queues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: `Service ${format(new Date(), "PPP")}`,
+          date: new Date().toISOString(),
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to create queue");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
+      toast({ title: "Service queue created" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create queue", variant: "destructive" });
+    },
+  });
+
   const reorderMutation = useMutation({
     mutationFn: async ({ queueId, itemId, newOrder }: { queueId: number, itemId: number, newOrder: number }) => {
       const res = await fetch(`/api/queues/${queueId}/reorder`, {
@@ -76,19 +98,26 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
   });
 
   const handleDragEnd = (result: any) => {
-    // Handle the drag end event and update order
     if (!result.destination) return;
 
     const [queueId, itemId] = result.active.id.split('-');
     reorderMutation.mutate({
       queueId: parseInt(queueId),
       itemId: parseInt(itemId),
-      newOrder: result.destination.index,
+      newOrder: result.destination.index + 1,
     });
   };
 
   if (!queues?.length) {
-    return <div className="text-center py-8">No service queues available</div>;
+    return (
+      <div className="text-center py-8">
+        <p className="mb-4">No service queue available</p>
+        <Button onClick={() => createQueueMutation.mutate()}>
+          <Plus className="h-4 w-4 mr-2" />
+          Create Service Queue
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -116,7 +145,7 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
                 <div className="space-y-4">
                   {queue.items.map((item) => (
                     <SortableItem key={`${queue.id}-${item.id}`} id={`${queue.id}-${item.id}`}>
-                      <Card>
+                      <Card className="w-full">
                         <CardContent className="p-4">
                           <h4 className="font-medium mb-2">{item.song.title}</h4>
                           <div className="grid grid-cols-2 gap-2">
