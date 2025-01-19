@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ServiceQueue, QueueItem, Song, Segment } from "@db/schema";
 import { format } from "date-fns";
-import { Calendar, GripVertical, Plus } from "lucide-react";
+import { Calendar, GripVertical, Plus, Trash2 } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -55,6 +55,23 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
 
   const { data: queues } = useQuery<(ServiceQueue & { items: (QueueItem & { song: Song & { segments: Segment[] } })[] })[]>({
     queryKey: ["/api/queues"],
+  });
+
+  const deleteItemMutation = useMutation({
+    mutationFn: async ({ queueId, itemId }: { queueId: number; itemId: number }) => {
+      const res = await fetch(`/api/queues/${queueId}/songs/${itemId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to remove song from queue");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/queues"] });
+      toast({ title: "Song removed from queue" });
+    },
+    onError: () => {
+      toast({ title: "Failed to remove song from queue", variant: "destructive" });
+    },
   });
 
   const createQueueMutation = useMutation({
@@ -109,11 +126,20 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
     });
   };
 
-  const displaySegment = (segment: Segment) => {
+  const displaySegment = (segment: Segment, displayWindow: Window | null) => {
+    console.log("Attempting to display segment:", segment);
+    console.log("Display window available:", !!displayWindow);
     if (displayWindow) {
       synchronizeDisplay(displayWindow, {
         type: "DISPLAY_SEGMENT",
         payload: { content: segment.content }
+      });
+    } else {
+      console.error("Display window is not available");
+      toast({
+        title: "Display window not open",
+        description: "Please open the display window first",
+        variant: "destructive"
       });
     }
   };
@@ -157,7 +183,19 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
                     <SortableItem key={`${queue.id}-${item.id}`} id={`${queue.id}-${item.id}`}>
                       <Card className="w-full">
                         <CardContent className="p-4">
-                          <h4 className="font-medium mb-2">{item.song.title}</h4>
+                          <div className="flex justify-between items-start mb-4">
+                            <h4 className="font-medium">{item.song.title}</h4>
+                            <Button
+                              variant="destructive"
+                              size="icon"
+                              onClick={() => deleteItemMutation.mutate({
+                                queueId: queue.id,
+                                itemId: item.id,
+                              })}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                           <div className="grid grid-cols-2 gap-2">
                             {item.song.segments.map((segment) => (
                               <Button
@@ -165,7 +203,7 @@ export default function ServiceQueue({ displayWindow }: ServiceQueueProps) {
                                 variant="outline"
                                 size="sm"
                                 className="justify-start"
-                                onClick={() => displaySegment(segment)}
+                                onClick={() => displaySegment(segment, displayWindow)}
                               >
                                 {segment.type} {segment.order}
                               </Button>

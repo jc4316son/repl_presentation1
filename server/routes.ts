@@ -232,5 +232,36 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  app.delete("/api/queues/:queueId/songs/:itemId", async (req, res) => {
+    try {
+      const { queueId, itemId } = req.params;
+
+      // Delete the queue item
+      await db
+        .delete(queueItems)
+        .where(sql`${queueItems.id} = ${itemId} AND ${queueItems.queueId} = ${queueId}`);
+
+      // Get remaining items to reorder them
+      const remainingItems = await db
+        .select()
+        .from(queueItems)
+        .where(eq(queueItems.queueId, parseInt(queueId)))
+        .orderBy(queueItems.order);
+
+      // Update order of remaining items
+      for (let i = 0; i < remainingItems.length; i++) {
+        await db
+          .update(queueItems)
+          .set({ order: i + 1 })
+          .where(eq(queueItems.id, remainingItems[i].id));
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error removing song from queue:', error);
+      res.status(500).json({ message: 'Failed to remove song from queue' });
+    }
+  });
+
   return httpServer;
 }
