@@ -1,76 +1,90 @@
 import { toast } from "@/hooks/use-toast";
 
-interface DisplayMessage {
-  type: 'DISPLAY_SEGMENT';
-  payload: {
-    content: string;
-  };
-}
-
-class DisplayWindowManager {
+class DisplayManager {
+  private static instance: DisplayManager;
   private displayWindow: Window | null = null;
 
-  openDisplay(): Window | null {
-    if (this.displayWindow?.closed) {
-      this.displayWindow = null;
-    }
+  private constructor() {}
 
-    if (!this.displayWindow) {
-      const newWindow = window.open('/display', 'presentation', 'width=800,height=600');
-      if (!newWindow) {
-        toast({
-          title: "Could not open display window",
-          description: "Please allow pop-ups for this site",
-          variant: "destructive"
-        });
-        return null;
-      }
-      this.displayWindow = newWindow;
+  static getInstance(): DisplayManager {
+    if (!DisplayManager.instance) {
+      DisplayManager.instance = new DisplayManager();
     }
-
-    this.displayWindow.focus();
-    return this.displayWindow;
+    return DisplayManager.instance;
   }
 
-  sendMessage(message: DisplayMessage): boolean {
-    if (!this.displayWindow || this.displayWindow.closed) {
+  openDisplay(): void {
+    try {
+      // Close existing window if it's already open but not accessible
+      if (this.displayWindow && !this.canAccessWindow()) {
+        this.displayWindow = null;
+      }
+
+      // Create new window if needed
+      if (!this.displayWindow) {
+        this.displayWindow = window.open('/display', '_blank', 'width=800,height=600');
+
+        if (!this.displayWindow) {
+          toast({
+            title: "Could not open display window",
+            description: "Please allow pop-ups for this site",
+            variant: "destructive"
+          });
+          return;
+        }
+      }
+
+      this.displayWindow.focus();
+    } catch (error) {
+      console.error('Error opening display window:', error);
+      toast({
+        title: "Error opening display",
+        description: "There was an error opening the display window",
+        variant: "destructive"
+      });
+    }
+  }
+
+  closeDisplay(): void {
+    if (this.canAccessWindow()) {
+      this.displayWindow?.close();
+    }
+    this.displayWindow = null;
+  }
+
+  displayContent(content: string): void {
+    if (!this.canAccessWindow()) {
       toast({
         title: "Display window not open",
         description: "Please open the display window first",
         variant: "destructive"
       });
-      return false;
+      return;
     }
 
     try {
-      this.displayWindow.postMessage(message, '*');
-      return true;
+      this.displayWindow?.postMessage({ type: 'UPDATE_DISPLAY', content }, '*');
     } catch (error) {
-      console.error('Failed to send message to display window:', error);
+      console.error('Error sending content to display:', error);
       toast({
-        title: "Failed to display content",
-        description: "There was an error communicating with the display window",
+        title: "Display Error",
+        description: "Failed to send content to display window",
         variant: "destructive"
       });
-      return false;
     }
   }
 
-  displaySegment(content: string): boolean {
-    return this.sendMessage({
-      type: 'DISPLAY_SEGMENT',
-      payload: { content }
-    });
-  }
-
-  closeDisplay() {
-    this.displayWindow?.close();
-    this.displayWindow = null;
-  }
-
   isDisplayOpen(): boolean {
-    return !!(this.displayWindow && !this.displayWindow.closed);
+    return this.canAccessWindow();
+  }
+
+  private canAccessWindow(): boolean {
+    try {
+      return !!(this.displayWindow && !this.displayWindow.closed);
+    } catch {
+      return false;
+    }
   }
 }
 
-export const displayManager = new DisplayWindowManager();
+export const displayManager = DisplayManager.getInstance();

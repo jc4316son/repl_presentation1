@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
 
 interface DisplayMessage {
-  type: 'DISPLAY_SEGMENT';
-  payload: {
-    content: string;
-  };
+  type: 'UPDATE_DISPLAY';
+  content: string;
 }
 
 export default function DisplayWindow() {
@@ -12,15 +10,19 @@ export default function DisplayWindow() {
 
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
-      const message = event.data as DisplayMessage;
+      const data = event.data as DisplayMessage;
 
-      if (message?.type === 'DISPLAY_SEGMENT' && message?.payload?.content) {
-        setContent(message.payload.content);
+      if (data?.type === 'UPDATE_DISPLAY' && typeof data.content === 'string') {
+        setContent(data.content);
       }
     }
 
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
+    window.addEventListener('message', handleMessage);
+
+    // Notify parent window that display is ready
+    window.opener?.postMessage({ type: 'DISPLAY_READY' }, '*');
+
+    return () => window.removeEventListener('message', handleMessage);
   }, []);
 
   return (

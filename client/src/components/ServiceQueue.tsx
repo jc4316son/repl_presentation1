@@ -125,8 +125,8 @@ export default function ServiceQueue() {
     }
   };
 
-  const displaySegment = (segment: Segment) => {
-    displayManager.displaySegment(segment.content);
+  const displaySegment = (content: string) => {
+    displayManager.displayContent(content);
   };
 
   if (isError) {
@@ -196,7 +196,7 @@ export default function ServiceQueue() {
                                 variant="outline"
                                 size="sm"
                                 className="justify-start"
-                                onClick={() => displaySegment(segment)}
+                                onClick={() => displaySegment(segment.content)}
                               >
                                 {segment.type} {segment.order}
                               </Button>
